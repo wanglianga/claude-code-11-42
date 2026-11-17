@@ -1,0 +1,62 @@
+# Aviation cargo security-event data-quality and status publication platform.
+#
+#   docker compose up --build          -> API on http://localhost:8080
+#   docker compose run --rm demo       -> end-to-end scenario against the DB
+#
+# The `demo` service is profile-gated so a plain `up` only starts the platform.
+name: cargo-secstate
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ccdev
+      POSTGRES_PASSWORD: ccdev
+      POSTGRES_DB: ccdev
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ccdev -d ccdev"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ADDR: ":8080"
+      DATABASE_URL: postgres://ccdev:ccdev@db:5432/ccdev?sslmode=disable
+      TZ: UTC
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["demo"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://ccdev:ccdev@db:5432/ccdev?sslmode=disable
+      TZ: UTC
+    command: ["/app/demo", "-markdown"]
+
+volumes:
+  pgdata:
